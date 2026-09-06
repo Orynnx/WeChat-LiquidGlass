@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" role="img" aria-labelledby="title desc">
+  <title id="title">e江南 主页面底栏液态玻璃 Layout 方案</title>
+  <desc id="desc">左侧为 activity_home.xml 现状，右侧为待确认的液态玻璃改造结构。</desc>
+  <style>
+    text { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; fill: #172033; }
+    .title { font-size: 25px; font-weight: 700; }
+    .label { font-size: 17px; font-weight: 600; }
+    .small { font-size: 14px; }
+    .box { stroke: #44516a; stroke-width: 2; rx: 12; }
+    .content { fill: #eaf1ff; }
+    .container { fill: #f6f8fc; }
+    .bar { fill: #ffe7b3; }
+    .glass { fill: #b8ecf3; fill-opacity: .8; stroke: #167c96; stroke-width: 3; }
+    .delete { fill: #ffd9de; stroke: #b3263e; stroke-width: 2; stroke-dasharray: 8 6; }
+    .keep { fill: #dff4df; stroke: #2d7b43; stroke-width: 2; }
+    .arrow { stroke: #167c96; stroke-width: 3; fill: none; marker-end: url(#arrowhead); }
+    .dash { stroke: #b3263e; stroke-width: 2; stroke-dasharray: 8 6; fill: none; }
+  </style>
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#167c96"/></marker>
+  </defs>
+  <text x="42" y="42" class="title">e江南 activity_home.xml：底栏改造 Layout 图（待确认）</text>
+  <text x="42" y="76" class="small">红色虚线 = 拟删除/隐藏；绿色 = 保留业务交互；蓝绿色 = 新增液态玻璃承载</text>
+  <text x="70" y="125" class="title">现状</text>
+  <rect x="55" y="145" width="455" height="525" class="box container"/>
+  <text x="75" y="178" class="label">view_content (LinearLayout)</text>
+  <rect x="75" y="195" width="415" height="390" class="box container"/>
+  <text x="95" y="227" class="label">ConstraintLayout (weight=1)</text>
+  <rect x="95" y="245" width="375" height="245" class="box content"/>
+  <text x="115" y="278" class="label">tab_content (FrameLayout)</text>
+  <text x="115" y="312" class="small">当前页面 / Fragment 内容</text>
+  <rect x="95" y="505" width="375" height="105" class="box bar"/>
+  <text x="115" y="535" class="label">rl_bottom (全宽原容器)</text>
+  <rect x="115" y="548" width="335" height="37" class="box keep"/>
+  <text x="130" y="572" class="small">tl_nav / CpHomeBottomTabLayout</text>
+  <rect x="115" y="589" width="335" height="8" class="delete"/>
+  <text x="130" y="615" class="small">tab_line_nontransparent (0.5dp)</text>
+  <text x="95" y="646" class="small">cp_drag_view (gone)</text>
+  <path d="M545 390 C600 390 610 390 650 390" class="arrow"/>
+  <text x="555" y="365" class="small">确认后实施</text>
+  <text x="700" y="125" class="title">拟改造</text>
+  <rect x="680" y="145" width="455" height="525" class="box container"/>
+  <text x="700" y="178" class="label">view_content (LinearLayout)</text>
+  <rect x="700" y="195" width="415" height="390" class="box container"/>
+  <text x="720" y="227" class="label">ConstraintLayout (weight=1)</text>
+  <rect x="720" y="245" width="375" height="330" class="box content"/>
+  <text x="740" y="278" class="label">tab_content (扩展至底部)</text>
+  <text x="740" y="312" class="small">页面内容填满释放的区域</text>
+  <rect x="750" y="370" width="315" height="115" class="glass"/>
+  <text x="770" y="402" class="label">LiquidGlassHostLayout</text>
+  <rect x="770" y="415" width="275" height="25" class="glass"/>
+  <text x="783" y="433" class="small">LiquidGlassPanel + DropletPanel</text>
+  <rect x="770" y="445" width="275" height="25" class="keep"/>
+  <text x="783" y="463" class="small">tl_nav（交互 / 红点保留）</text>
+  <rect x="720" y="540" width="375" height="35" class="delete"/>
+  <text x="738" y="563" class="small">rl_bottom 全宽占位/背景移除</text>
+  <text x="720" y="630" class="small">系统 gesture inset：透明背景 + 玻璃浮层锚定</text>
+</svg>

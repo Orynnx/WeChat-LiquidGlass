@@ -91,6 +91,9 @@ public class LiquidGlassModule extends XposedModule {
             return;
         }
         sApp = app;
+        log(android.util.Log.INFO,
+                "probe:ejiangnan-module-injected package=" + app.pkg
+                        + " process=" + proc);
         try {
             Method callOnResume = Instrumentation.class.getMethod(
                     "callActivityOnResume", Activity.class);
@@ -134,6 +137,11 @@ public class LiquidGlassModule extends XposedModule {
         sApp = app;
         log(android.util.Log.INFO, "target package loaded: " + app
                 + " classLoader=" + param.getDefaultClassLoader());
+        if (app == HostApp.EJIANGNAN) {
+            log(android.util.Log.INFO,
+                    "probe:ejiangnan-package-loaded; layout surgery will run on HomeActivity resume");
+            return;
+        }
         // The tab bar bridge needs the app's own classes, so it can only be
         // wired once the app class loader exists.
         TabBarBridge.install(app, param.getDefaultClassLoader());

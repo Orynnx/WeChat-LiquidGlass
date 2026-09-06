@@ -893,7 +893,7 @@ final class LiquidGlassInstaller {
         host.setupShadow(density, isNight(ctx));
         host.setClipChildren(false);
         host.setClipToPadding(false);
-        host.setTranslationY(-5f);
+        host.setTranslationY(-1f);
         try {
             // Replace the temporary row with the actual glass host while
             // leaving tl_nav, rl_bottom, roots and listeners untouched.

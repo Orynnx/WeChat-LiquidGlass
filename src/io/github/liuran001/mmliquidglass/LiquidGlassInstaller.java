@@ -2558,6 +2558,12 @@ final class LiquidGlassInstaller {
     /* ---------------- renderer ---------------- */
 
     private static boolean isNight(Context ctx) {
+        // e江南 has no dark theme. Its page palette, endpoint icon contrast,
+        // glass wash and system-bar appearance must therefore stay light even
+        // when HyperOS itself is in dark mode.
+        if (LiquidGlassModule.app() == HostApp.EJIANGNAN) {
+            return false;
+        }
         return (ctx.getResources().getConfiguration().uiMode
                 & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
                 == android.content.res.Configuration.UI_MODE_NIGHT_YES;

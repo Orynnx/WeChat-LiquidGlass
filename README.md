@@ -5,8 +5,8 @@
 作者：**Orynnx**
 
 本项目基于上游开源项目 [WeChat-LiquidGlass](https://github.com/liuran001/WeChat-LiquidGlass)
-进行 e江南适配。保留上游作者 **liuran001** 的来源、版权与许可证信息；新增的 e江南适配和维护由
-**Orynnx** 负责。
+进行 e江南适配。保留上游作者 **liuran001** 的来源、版权与许可证信息；新增的 e江南适配由
+**Orynnx** 创建。
 
 ## Description
 

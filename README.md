@@ -2,8 +2,11 @@
 
 使用 GPT-5.6 Sol 与 GPT-6 Astra Vibe Coding 得到的液态玻璃导航栏 Xposed 模块。
 
-来源：上游 [WeChat-LiquidGlass](https://github.com/liuran001/WeChat-LiquidGlass)
-开源项目。
+作者：**Orynnx**
+
+本项目基于上游开源项目 [WeChat-LiquidGlass](https://github.com/liuran001/WeChat-LiquidGlass)
+进行 e江南适配。保留上游作者 **liuran001** 的来源、版权与许可证信息；新增的 e江南适配和维护由
+**Orynnx** 负责。
 
 ## Description
 

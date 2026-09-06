@@ -876,8 +876,8 @@ final class LiquidGlassInstaller {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 android.view.Gravity.FILL);
-        // The host is anchored to tl_nav, then raised by exactly 20 physical
-        // pixels. Ancestors are unclipped so the raised glass is not sheared.
+        // The host is anchored to tl_nav, then raised by 5 physical pixels.
+        // This is 15px lower than the previous -20px placement.
         try {
             nav.addView(glassNav, glassLp);
         } catch (Throwable t) {
@@ -893,7 +893,7 @@ final class LiquidGlassInstaller {
         host.setupShadow(density, isNight(ctx));
         host.setClipChildren(false);
         host.setClipToPadding(false);
-        host.setTranslationY(-20f);
+        host.setTranslationY(-5f);
         try {
             // Replace the temporary row with the actual glass host while
             // leaving tl_nav, rl_bottom, roots and listeners untouched.

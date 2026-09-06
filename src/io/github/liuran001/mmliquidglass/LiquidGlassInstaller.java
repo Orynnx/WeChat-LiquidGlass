@@ -6,7 +6,6 @@ import android.graphics.drawable.ColorDrawable;
 import android.os.Build;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.ViewParent;
 import android.view.ViewTreeObserver;
 import android.view.WindowInsets;
 import android.widget.FrameLayout;
@@ -71,18 +70,6 @@ final class LiquidGlassInstaller {
     private static boolean sBlurRelit;
     /** Droplet's resting Y inside the host, before WeChat's bar offset. */
     private static float sDropletBaseY;
-
-    /** State for the e江南-only layout surgery (glass is intentionally off). */
-    private static boolean sEjiangnanInstalled;
-    private static WeakReference<View> sEjiangnanDecorRef = new WeakReference<>(null);
-    private static WeakReference<ViewGroup> sEjiangnanNavRef = new WeakReference<>(null);
-    private static WeakReference<ViewGroup> sEjiangnanContentRef = new WeakReference<>(null);
-    private static ViewTreeObserver.OnPreDrawListener sEjiangnanPreDraw;
-    private static View.OnLayoutChangeListener sEjiangnanContentLayout;
-
-    /** Private view tags used only to make the injection probe inspectable. */
-    private static final int EJIANGNAN_NAV_TAG = 0x7F5A0010;
-    private static final int EJIANGNAN_CONTENT_TAG = 0x7F5A0011;
 
     private LiquidGlassInstaller() {
     }
@@ -154,8 +141,7 @@ final class LiquidGlassInstaller {
         // not wrap the Activity, so the window is not reachable from them.
         sActivityRef = new WeakReference<>(activity);
         View decor = activity.getWindow().getDecorView();
-        if (sHostRef.get() == null
-                && LiquidGlassModule.app() != HostApp.EJIANGNAN) {
+        if (sHostRef.get() == null) {
             hideStockBarUntilInstalled(decor);
         }
         decor.post(() -> tryInstall(activity, decor, 0));
@@ -165,16 +151,6 @@ final class LiquidGlassInstaller {
         try {
             if (activity.isFinishing() || activity.isDestroyed()) {
                 return;
-            }
-            if (LiquidGlassModule.app() == HostApp.EJIANGNAN
-                    && sEjiangnanInstalled) {
-                View installedDecor = sEjiangnanDecorRef.get();
-                if (installedDecor != null
-                        && installedDecor.getRootView() == decor.getRootView()) {
-                    reassertEjiangnan(activity, decor);
-                    return;
-                }
-                resetState();
             }
             // Only skip if the pill is live in *this* window. WeChat's process
             // outlives a swipe-away from recents, so these statics still point at
@@ -192,12 +168,7 @@ final class LiquidGlassInstaller {
             if (live != null) {
                 resetState();
             }
-            // e江南 is protected against false positives: its resource id and
-            // class name are known from the supplied APK, so do not fall back to
-            // shape matching another app-owned row.
-            ViewGroup tabView = LiquidGlassModule.app() == HostApp.EJIANGNAN
-                    ? TabBarBridge.findTabView(decor)
-                    : TabBarBridge.locateTabView(decor);
+            ViewGroup tabView = TabBarBridge.locateTabView(decor);
             if (tabView == null) {
                 if (attempt < MAX_ATTEMPTS) {
                     decor.postDelayed(
@@ -219,20 +190,6 @@ final class LiquidGlassInstaller {
 
     /** Drops references to a previous Activity's views so a relaunch reinstalls. */
     private static void resetState() {
-        View oldDecor = sEjiangnanDecorRef.get();
-        if (oldDecor != null && sEjiangnanPreDraw != null) {
-            try {
-                oldDecor.getViewTreeObserver().removeOnPreDrawListener(sEjiangnanPreDraw);
-            } catch (Throwable ignored) {
-            }
-        }
-        ViewGroup oldContent = sEjiangnanContentRef.get();
-        if (oldContent != null && sEjiangnanContentLayout != null) {
-            try {
-                oldContent.removeOnLayoutChangeListener(sEjiangnanContentLayout);
-            } catch (Throwable ignored) {
-            }
-        }
         sHostRef = new WeakReference<>(null);
         sTabViewRef = new WeakReference<>(null);
         sGlassRef = new WeakReference<>(null);
@@ -249,12 +206,6 @@ final class LiquidGlassInstaller {
         sBlurRelit = false;
         sLastIndex = -1;
         sDropletBaseY = 0f;
-        sEjiangnanInstalled = false;
-        sEjiangnanDecorRef = new WeakReference<>(null);
-        sEjiangnanNavRef = new WeakReference<>(null);
-        sEjiangnanContentRef = new WeakReference<>(null);
-        sEjiangnanPreDraw = null;
-        sEjiangnanContentLayout = null;
         LiquidGlassModule.log(android.util.Log.INFO,
                 "stale host from a previous Activity dropped, reinstalling");
     }
@@ -271,10 +222,6 @@ final class LiquidGlassInstaller {
     }
 
     private static void install(ViewGroup tabView) {
-        if (LiquidGlassModule.app() == HostApp.EJIANGNAN) {
-            installEjiangnanLayout(tabView);
-            return;
-        }
         ViewGroup parent = tabView.getParent() instanceof ViewGroup
                 ? (ViewGroup) tabView.getParent() : null;
         if (parent == null) {
@@ -784,247 +731,6 @@ final class LiquidGlassInstaller {
             stretchToBottom(v, Math.max(parent.getHeight(),
                     grand == null ? 0 : grand.getHeight()));
         });
-    }
-
-    /**
-     * e江南 phase-one layout surgery. The original bottom navigation is not
-     * reparented and no glass view is created yet: the whole {@code rl_bottom}
-     * container is kept GONE, while {@code tab_content} is made the full-height
-     * content surface. Keeping the view in the tree (rather than removing it)
-     * lets e江南 continue to resolve its own ids and makes the operation
-     * reversible on Activity recreation.
-     */
-    private static void installEjiangnanLayout(ViewGroup tabView) {
-        if (tabView == null) {
-            return;
-        }
-        ViewParent rawParent = tabView.getParent();
-        if (!(rawParent instanceof ViewGroup)) {
-            LiquidGlassModule.log(android.util.Log.WARN,
-                    "probe:ejiangnan-nav-parent-missing class="
-                            + tabView.getClass().getName());
-            return;
-        }
-        ViewGroup nav = (ViewGroup) rawParent;
-        ViewGroup content = findEjiangnanContent(nav);
-        if (content == null) {
-            LiquidGlassModule.log(android.util.Log.WARN,
-                    "probe:ejiangnan-content-missing nav="
-                            + nav.getClass().getName());
-            return;
-        }
-
-        View decor = content.getRootView();
-        nav.setTag(EJIANGNAN_NAV_TAG, "liquidejnu:ejiangnan-nav-hidden");
-        nav.setVisibility(View.GONE);
-        hideEjiangnanDivider(nav);
-        content.setTag(EJIANGNAN_CONTENT_TAG, "liquidejnu:content-expanded");
-        enforceEjiangnanContent(content);
-
-        Activity activity = sActivityRef.get();
-        if (activity != null) {
-            extendUnderNavBar(activity);
-        }
-
-        sEjiangnanInstalled = true;
-        sEjiangnanDecorRef = new WeakReference<>(decor);
-        sEjiangnanNavRef = new WeakReference<>(nav);
-        sEjiangnanContentRef = new WeakReference<>(content);
-        installEjiangnanGuards(decor, content);
-        LiquidGlassModule.log(android.util.Log.INFO,
-                "probe:ejiangnan-nav-hidden nav=" + nav.getClass().getName()
-                        + " content=" + content.getClass().getName()
-                        + " contentSize=" + content.getWidth() + "x"
-                        + content.getHeight());
-    }
-
-    /** Resolves the known app id without linking against e江南 classes. */
-    private static ViewGroup findEjiangnanContent(ViewGroup nav) {
-        View root = nav.getRootView();
-        int id = nav.getResources().getIdentifier(
-                "tab_content", "id", HostApp.EJIANGNAN.pkg);
-        if (id != 0 && root != null) {
-            View found = root.findViewById(id);
-            if (found instanceof ViewGroup && found != nav) {
-                return (ViewGroup) found;
-            }
-        }
-        // A fallback for builds that rename the resource while retaining the
-        // same structure: the content is the largest non-nav ViewGroup sibling
-        // of the nav's nearest layout ancestor.
-        ViewGroup best = null;
-        int bestArea = 0;
-        ViewParent p = nav.getParent();
-        for (int depth = 0; depth < 4 && p instanceof ViewGroup; depth++) {
-            ViewGroup ancestor = (ViewGroup) p;
-            for (int i = 0; i < ancestor.getChildCount(); i++) {
-                View c = ancestor.getChildAt(i);
-                if (c == nav || !(c instanceof ViewGroup)
-                        || c.getVisibility() == View.GONE) {
-                    continue;
-                }
-                int area = Math.max(0, c.getWidth()) * Math.max(0, c.getHeight());
-                if (area > bestArea) {
-                    best = (ViewGroup) c;
-                    bestArea = area;
-                }
-            }
-            if (best != null && bestArea > 0) {
-                return best;
-            }
-            p = ancestor.getParent();
-        }
-        return null;
-    }
-
-    /** Hides the full-width hairline that otherwise survives the nav removal. */
-    private static void hideEjiangnanDivider(ViewGroup nav) {
-        int id = nav.getResources().getIdentifier(
-                "tab_line_nontransparent", "id", HostApp.EJIANGNAN.pkg);
-        if (id != 0) {
-            View line = nav.getRootView().findViewById(id);
-            if (line != null) {
-                line.setTag(EJIANGNAN_NAV_TAG, "liquidejnu:divider-hidden");
-                line.setVisibility(View.GONE);
-            }
-        }
-        float density = nav.getResources().getDisplayMetrics().density;
-        int maxThickness = Math.max(2, Math.round(density * 1.5f));
-        for (int i = 0; i < nav.getChildCount(); i++) {
-            View child = nav.getChildAt(i);
-            if (!(child instanceof ViewGroup)
-                    && child.getHeight() > 0
-                    && child.getHeight() <= maxThickness
-                    && child.getWidth() >= nav.getWidth() * 0.9f) {
-                child.setTag(EJIANGNAN_NAV_TAG, "liquidejnu:divider-hidden");
-                child.setVisibility(View.GONE);
-            }
-        }
-    }
-
-    /** Applies the content expansion idempotently on every layout pass. */
-    private static void enforceEjiangnanContent(ViewGroup content) {
-        if (content == null) {
-            return;
-        }
-        boolean changed = false;
-        ViewGroup.LayoutParams raw = content.getLayoutParams();
-        if (raw != null) {
-            if (raw.width != ViewGroup.LayoutParams.MATCH_PARENT) {
-                raw.width = ViewGroup.LayoutParams.MATCH_PARENT;
-                changed = true;
-            }
-            if (raw.height != ViewGroup.LayoutParams.MATCH_PARENT) {
-                raw.height = ViewGroup.LayoutParams.MATCH_PARENT;
-                changed = true;
-            }
-            if (raw instanceof ViewGroup.MarginLayoutParams) {
-                ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) raw;
-                if (mlp.bottomMargin != 0) {
-                    mlp.bottomMargin = 0;
-                    changed = true;
-                }
-            }
-            if (changed) {
-                content.setLayoutParams(raw);
-            }
-        }
-        if (content.getPaddingBottom() != 0) {
-            content.setPadding(content.getPaddingLeft(), content.getPaddingTop(),
-                    content.getPaddingRight(), 0);
-            changed = true;
-        }
-        content.setClipToPadding(false);
-        content.setClipChildren(false);
-        // HomeActivity constrains each currently visible page to the old
-        // bottom-nav top (the supplied device dump showed 2219px inside a
-        // 2356px tab_content). Once rl_bottom is gone that child constraint is
-        // the blank band we must reclaim, so promote direct page children to
-        // the full content height as well.
-        for (int i = 0; i < content.getChildCount(); i++) {
-            View child = content.getChildAt(i);
-            if (child.getVisibility() == View.GONE) {
-                continue;
-            }
-            ViewGroup.LayoutParams childLp = child.getLayoutParams();
-            boolean childChanged = false;
-            if (childLp != null
-                    && childLp.height != ViewGroup.LayoutParams.MATCH_PARENT) {
-                childLp.height = ViewGroup.LayoutParams.MATCH_PARENT;
-                childChanged = true;
-            }
-            if (childLp instanceof ViewGroup.MarginLayoutParams) {
-                ViewGroup.MarginLayoutParams mlp = (ViewGroup.MarginLayoutParams) childLp;
-                if (mlp.bottomMargin != 0) {
-                    mlp.bottomMargin = 0;
-                    childChanged = true;
-                }
-            }
-            if (childChanged) {
-                child.setLayoutParams(childLp);
-                changed = true;
-            }
-        }
-        if (changed) {
-            content.requestLayout();
-        }
-    }
-
-    /** Reasserts hidden nav/content expansion and the transparent system bar. */
-    private static void reassertEjiangnan(Activity activity, View decor) {
-        ViewGroup nav = sEjiangnanNavRef.get();
-        ViewGroup content = sEjiangnanContentRef.get();
-        if (nav != null && nav.getRootView() == decor.getRootView()) {
-            nav.setVisibility(View.GONE);
-            hideEjiangnanDivider(nav);
-        }
-        if (content != null && content.getRootView() == decor.getRootView()) {
-            enforceEjiangnanContent(content);
-        }
-        extendUnderNavBar(activity);
-        keepNavBarClear();
-    }
-
-    /** Installs lightweight guards; no renderer or animation is attached. */
-    private static void installEjiangnanGuards(View decor, ViewGroup content) {
-        if (decor == null || content == null) {
-            return;
-        }
-        if (sEjiangnanContentLayout != null) {
-            content.removeOnLayoutChangeListener(sEjiangnanContentLayout);
-        }
-        sEjiangnanContentLayout = (v, l, t, r, b, oldl, oldt, oldr, oldb) -> {
-            if (sEjiangnanInstalled && v == sEjiangnanContentRef.get()) {
-                enforceEjiangnanContent((ViewGroup) v);
-            }
-        };
-        content.addOnLayoutChangeListener(sEjiangnanContentLayout);
-        if (sEjiangnanPreDraw != null) {
-            decor.getViewTreeObserver().removeOnPreDrawListener(sEjiangnanPreDraw);
-        }
-        sEjiangnanPreDraw = () -> {
-            View installedDecor = sEjiangnanDecorRef.get();
-            if (!sEjiangnanInstalled || installedDecor == null
-                    || decor.getRootView() != installedDecor.getRootView()) {
-                return true;
-            }
-            try {
-                ViewGroup nav = sEjiangnanNavRef.get();
-                if (nav != null) {
-                    nav.setVisibility(View.GONE);
-                    hideEjiangnanDivider(nav);
-                }
-                enforceEjiangnanContent(sEjiangnanContentRef.get());
-                keepNavBarClear();
-            } catch (Throwable t) {
-                if (!sKeepFailed) {
-                    sKeepFailed = true;
-                    LiquidGlassModule.logErr("ejiangnan layout guard failed", t);
-                }
-            }
-            return true;
-        };
-        decor.getViewTreeObserver().addOnPreDrawListener(sEjiangnanPreDraw);
     }
 
     /**

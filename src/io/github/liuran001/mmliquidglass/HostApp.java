@@ -1,7 +1,7 @@
 package io.github.liuran001.mmliquidglass;
 
 /**
- * Everything that differs between the app this module can dress up.
+ * Everything that differs between the apps this module can dress up.
  *
  * <p>The installer, the glass renderer and the droplet are entirely
  * app-agnostic — they work off view geometry. What is not portable is finding
@@ -73,20 +73,7 @@ final class HostApp {
             true,
             "com.tencent.mobileqq.");
 
-    /** e江南 3.0.7 home screen (verified from the supplied base.apk). */
-    static final HostApp EJIANGNAN = new HostApp(
-            "com.wisedu.cpdaily.jiangnan",
-            "com.wisorg.wisedu.home.ui.HomeActivity",
-            new String[]{"com.wisorg.wisedu.widget.tablayout.CpHomeBottomTabLayout"},
-            new String[0],
-            "",
-            new String[0],
-            new String[0],
-            false,
-            "com.wisorg.wisedu.");
-
-    /* Keep only the e江南 entry reachable from the runtime allow-list. */
-    private static final HostApp[] ALL = {EJIANGNAN};
+    private static final HostApp[] ALL = {WECHAT, QQ};
 
     /** Package name, which is also the name of the process the home screen lives in. */
     final String pkg;

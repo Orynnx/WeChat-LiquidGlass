@@ -28,7 +28,7 @@ rm -rf "$OUT"
 mkdir -p "$OUT/classes" "$OUT/dex"
 
 echo "[1/7] javac"
-find "$PROJ/src" -name '*.java' > "$OUT/sources.txt"
+find "$PROJ/src" -name '*.java' -exec cygpath -w {} \; > "$OUT/sources.txt"
 javac -encoding UTF-8 --release 11 -Xlint:-options \
     -classpath "$PLATFORM:$XAPI" \
     -d "$OUT/classes" \
@@ -58,7 +58,8 @@ mkdir -p "$STAGE"
 cp "$OUT/dex/classes.dex" "$STAGE/classes.dex"
 cp -r "$PROJ/META-INF" "$STAGE/"
 # zip via python: NixOS has no zip(1), and this keeps entry order deterministic.
-python3 - "$STAGE" "$OUT/unsigned.apk" <<'PYZIP'
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+"$PYTHON_BIN" - "$STAGE" "$OUT/unsigned.apk" <<'PYZIP'
 import os, sys, zipfile
 stage, apk = sys.argv[1], sys.argv[2]
 with zipfile.ZipFile(apk, 'a') as z:

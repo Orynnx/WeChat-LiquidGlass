@@ -295,8 +295,11 @@ final class LiquidGlassPanel extends View {
         mHighlightShader.setFloatUniform("size", w, h);
         mHighlightShader.setFloatUniform("alpha", 0.12f * p);
         mHighlightShader.setFloatUniform("radius", Math.min(w, h) * 1.2f);
+        // Keep the bloom centre 1% inside the capsule so its soft radius does
+        // not spill visibly past either rounded end.
+        float edge = w * 0.01f;
         mHighlightShader.setFloatUniform("position",
-                Math.max(0f, Math.min(mInteractionX, w)), h * 0.5f);
+                Math.max(edge, Math.min(mInteractionX, w - edge)), h * 0.5f);
         mBloom.setShader(mHighlightShader);
         mBloom.setBlendMode(android.graphics.BlendMode.PLUS);
         canvas.drawRect(0, 0, w, h, mBloom);

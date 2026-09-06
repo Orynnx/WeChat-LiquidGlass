@@ -123,6 +123,56 @@ public class LiquidGlassModule extends XposedModule {
                     });
             log(android.util.Log.INFO, "hooked Instrumentation.callActivityOnResume for "
                     + app + " (" + app.launcherActivity + ")");
+            // Some protected builds bypass Instrumentation.callActivityOnResume
+            // after handing control to their custom ActivityThread. Hook the
+            // public lifecycle method as a second, object-level entry point so
+            // the real Activity/View tree is still reached without guessing
+            // application classes.
+            Method activityResume = Activity.class.getDeclaredMethod("onResume");
+            hook(activityResume)
+                    .setExceptionMode(ExceptionMode.PROTECTIVE)
+                    .intercept(chain -> {
+                        Object result = chain.proceed();
+                        try {
+                            Object thiz = chain.getThisObject();
+                            if (thiz instanceof Activity
+                                    && app.launcherActivity.equals(thiz.getClass().getName())) {
+                                Activity activity = (Activity) thiz;
+                                log(android.util.Log.INFO,
+                                        "probe:ejiangnan-runtime-activity class="
+                                                + thiz.getClass().getName()
+                                                + " loader=" + thiz.getClass().getClassLoader());
+                                GlassConfig.load(activity);
+                                LiquidGlassInstaller.scheduleInstall(activity);
+                            }
+                        } catch (Throwable t) {
+                            logErr("activity onResume hook error", t);
+                        }
+                        return result;
+                    });
+            log(android.util.Log.INFO, "hooked Activity.onResume fallback for " + app);
+            Method attached = Activity.class.getMethod("onAttachedToWindow");
+            hook(attached)
+                    .setExceptionMode(ExceptionMode.PROTECTIVE)
+                    .intercept(chain -> {
+                        Object result = chain.proceed();
+                        try {
+                            Object thiz = chain.getThisObject();
+                            if (thiz instanceof Activity
+                                    && app.launcherActivity.equals(thiz.getClass().getName())) {
+                                Activity activity = (Activity) thiz;
+                                log(android.util.Log.INFO,
+                                        "probe:ejiangnan-runtime-activity attached class="
+                                                + thiz.getClass().getName()
+                                                + " loader=" + thiz.getClass().getClassLoader());
+                                LiquidGlassInstaller.scheduleInstall(activity);
+                            }
+                        } catch (Throwable t) {
+                            logErr("activity attached hook error", t);
+                        }
+                        return result;
+                    });
+            log(android.util.Log.INFO, "hooked Activity.onAttachedToWindow fallback for " + app);
         } catch (Throwable t) {
             logErr("install resume hook failed", t);
         }

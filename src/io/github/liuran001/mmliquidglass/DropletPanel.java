@@ -443,9 +443,10 @@ final class DropletPanel extends View {
      * whatever was underneath when the press began.
      */
     void refresh() {
-        if (mProgress > 0.01f) {
-            invalidate();
-        }
+        // Translation and the final spring frame can both change the sampled
+        // location while progress is already back at zero. Always redraw so
+        // the previous tab's lens/highlight cannot remain as a blue trail.
+        invalidate();
     }
 
     @Override

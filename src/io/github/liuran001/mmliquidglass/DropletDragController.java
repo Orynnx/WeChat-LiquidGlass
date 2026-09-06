@@ -41,6 +41,8 @@ final class DropletDragController implements LiquidGlassHostLayout.DragHandler {
     private static final float STRETCH_LIMIT = 0.2f;
     /** KernelSU: release() waits until within 2.5% of the range. */
     private static final float SETTLE_FRACTION = 0.025f;
+    /** Keep the droplet 1% inside the first/last tab edges. */
+    private static final float RANGE_EDGE_INSET = 0.01f;
 
     /**
      * Bar growth while held.
@@ -124,8 +126,7 @@ final class DropletDragController implements LiquidGlassHostLayout.DragHandler {
         mReleasePending = false;
         mLastSampleMs = 0L;
         mLastFrameNs = 0L;
-        float max = tabCount(tabRow) - 1f;
-        mValue.snapTo(clamp(mValue.value(), 0f, max));
+        mValue.snapTo(boundedPosition(mValue.value(), tabRow));
         mVelocity.snapTo(0f);
         mPress.snapTo(0f);
         mScaleX.snapTo(1f);
@@ -145,7 +146,7 @@ final class DropletDragController implements LiquidGlassHostLayout.DragHandler {
             return;
         }
         ViewGroup tabRow = mTabRowRef.get();
-        float target = clamp(index, 0f, tabCount(tabRow) - 1f);
+        float target = boundedPosition(index, tabRow);
         // Releasing a drag already aimed the spring here, and the resulting
         // performClick() bounces the selection straight back at us. Without this
         // the droplet pops a second time after it has settled — KernelSU avoids
@@ -225,7 +226,7 @@ final class DropletDragController implements LiquidGlassHostLayout.DragHandler {
                 float tabWidth = tabWidth(tabRow);
                 if (tabWidth > 0f) {
                     float v = mDragStartValue + (ev.getX() - mDownX) / tabWidth;
-                    mValue.animateTo(clamp(v, 0f, tabCount - 1f));
+                    mValue.animateTo(boundedPosition(v, tabRow));
                     schedule();
                 }
                 return true;
@@ -236,7 +237,7 @@ final class DropletDragController implements LiquidGlassHostLayout.DragHandler {
                 // that index flow back through the selection as the single source
                 // of truth. We only report it; the watcher drives the spring.
                 int index = Math.round(clamp(mValue.target(), 0f, tabCount - 1f));
-                mValue.animateTo(index);
+                mValue.animateTo(boundedPosition(index, tabRow));
                 mVelocity.animateTo(0f);
                 mDragging = false;
                 release();
@@ -378,9 +379,19 @@ final class DropletDragController implements LiquidGlassHostLayout.DragHandler {
         }
         ViewGroup.LayoutParams lp = droplet.getLayoutParams();
         float dropletW = lp != null && lp.width > 0 ? lp.width : droplet.getWidth();
-        float originX = tabRow.getLeft() + first.getLeft()
+        // FrameLayout lays a TOP/START child at its content origin, i.e. after
+        // the host's shadow padding. tabRow coordinates include that same
+        // padding, so subtract it once when converting the row position into
+        // the droplet's translation; otherwise the droplet is offset by one
+        // shadow pad to the right (and the error is obvious in the five-tab
+        // e江南 row).
+        float hostPadLeft = 0f;
+        if (droplet.getParent() instanceof ViewGroup) {
+            hostPadLeft = ((ViewGroup) droplet.getParent()).getPaddingLeft();
+        }
+        float originX = tabRow.getLeft() + first.getLeft() - hostPadLeft
                 + (first.getWidth() - dropletW) * 0.5f;
-        droplet.setTranslationX(originX + mValue.value() * tabWidth);
+        droplet.setTranslationX(originX + boundedPosition(mValue.value(), tabRow) * tabWidth);
 
         // KernelSU:
         //   scaleX /= 1f - (velocity * 0.75f).coerceIn(-0.2f, 0.2f)
@@ -457,5 +468,15 @@ final class DropletDragController implements LiquidGlassHostLayout.DragHandler {
 
     private static float clamp(float v, float lo, float hi) {
         return v < lo ? lo : (v > hi ? hi : v);
+    }
+
+    private static float boundedPosition(float position, ViewGroup tabRow) {
+        int count = Math.max(1, TabBarBridge.tabCount(tabRow));
+        float max = count - 1f;
+        if (max <= 0f) {
+            return 0f;
+        }
+        float inset = max * RANGE_EDGE_INSET;
+        return clamp(position, inset, max - inset);
     }
 }

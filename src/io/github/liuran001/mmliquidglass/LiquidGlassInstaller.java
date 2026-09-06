@@ -68,6 +68,8 @@ final class LiquidGlassInstaller {
     /** The app's own frosted strip and the bar's hairline, held hidden. */
     private static WeakReference<View> sBlurLayerRef = new WeakReference<>(null);
     private static WeakReference<View> sHairlineRef = new WeakReference<>(null);
+    private static WeakReference<View> sEjiangnanCommonTabRef = new WeakReference<>(null);
+    private static float sEjiangnanCommonTabAlpha = 1f;
     private static boolean sBlurRelit;
     /** Droplet's resting Y inside the host, before WeChat's bar offset. */
     private static float sDropletBaseY;
@@ -79,6 +81,10 @@ final class LiquidGlassInstaller {
     private static WeakReference<ViewGroup> sEjiangnanContentRef = new WeakReference<>(null);
     private static ViewTreeObserver.OnPreDrawListener sEjiangnanPreDraw;
     private static View.OnLayoutChangeListener sEjiangnanContentLayout;
+    private static WeakReference<EjiangnanGlassNavigation> sEjiangnanGlassNavRef =
+            new WeakReference<>(null);
+    private static View[] sEjiangnanNativeRoots = new View[0];
+    private static ViewTreeObserver.OnPreDrawListener sEjiangnanGlassWatcher;
 
     /** Private view tags used only to make the injection probe inspectable. */
     private static final int EJIANGNAN_NAV_TAG = 0x7F5A0010;
@@ -245,6 +251,8 @@ final class LiquidGlassInstaller {
         sBarHeight = 0;
         sBlurLayerRef = new WeakReference<>(null);
         sHairlineRef = new WeakReference<>(null);
+        sEjiangnanCommonTabRef = new WeakReference<>(null);
+        sEjiangnanCommonTabAlpha = 1f;
         sNavBgRef = new WeakReference<>(null);
         sBlurRelit = false;
         sLastIndex = -1;
@@ -255,6 +263,9 @@ final class LiquidGlassInstaller {
         sEjiangnanContentRef = new WeakReference<>(null);
         sEjiangnanPreDraw = null;
         sEjiangnanContentLayout = null;
+        sEjiangnanGlassNavRef = new WeakReference<>(null);
+        sEjiangnanNativeRoots = new View[0];
+        sEjiangnanGlassWatcher = null;
         LiquidGlassModule.log(android.util.Log.INFO,
                 "stale host from a previous Activity dropped, reinstalling");
     }
@@ -801,12 +812,16 @@ final class LiquidGlassInstaller {
         ViewParent rawParent = tabView.getParent();
         if (!(rawParent instanceof ViewGroup)) {
             LiquidGlassModule.log(android.util.Log.WARN,
-                    "probe:ejiangnan-nav-parent-missing class="
+                    "probe:ejiangnan-native-nav parent-missing class="
                             + tabView.getClass().getName());
             return;
         }
-        ViewGroup nav = (ViewGroup) rawParent;
-        ViewGroup content = findEjiangnanContent(nav);
+        // tabView is the real tl_nav. Its parent is rl_bottom, which remains in
+        // place as the app's anchor/inset owner; only its visual children are
+        // replaced.
+        ViewGroup nav = tabView;
+        ViewGroup bottom = (ViewGroup) rawParent;
+        ViewGroup content = findEjiangnanContent(bottom);
         if (content == null) {
             LiquidGlassModule.log(android.util.Log.WARN,
                     "probe:ejiangnan-content-missing nav="
@@ -814,28 +829,227 @@ final class LiquidGlassInstaller {
             return;
         }
 
-        View decor = content.getRootView();
-        nav.setTag(EJIANGNAN_NAV_TAG, "liquidejnu:ejiangnan-nav-hidden");
-        nav.setVisibility(View.GONE);
-        hideEjiangnanDivider(nav);
-        content.setTag(EJIANGNAN_CONTENT_TAG, "liquidejnu:content-expanded");
-        enforceEjiangnanContent(content);
+        int rootId = nav.getResources().getIdentifier("root", "id",
+                HostApp.EJIANGNAN.pkg);
+        if (rootId == 0) {
+            LiquidGlassModule.log(android.util.Log.WARN,
+                    "probe:ejiangnan-native-tab root-id-missing");
+            return;
+        }
+        java.util.ArrayList<View> roots = new java.util.ArrayList<>(5);
+        collectViewsById(nav, rootId, roots);
+        if (roots.size() < 5) {
+            LiquidGlassModule.log(android.util.Log.WARN,
+                    "probe:ejiangnan-native-tab count=" + roots.size());
+            return;
+        }
+        View[] nativeRoots = roots.subList(0, 5).toArray(new View[5]);
+        LiquidGlassModule.log(android.util.Log.INFO,
+                "probe:ejiangnan-native-nav class=" + nav.getClass().getName()
+                        + " parent=" + bottom.getClass().getName()
+                        + " bounds=" + nav.getWidth() + "x" + nav.getHeight());
+        LiquidGlassModule.log(android.util.Log.INFO,
+                "probe:ejiangnan-native-tab count=5 ids=root/ll_tap/iv_tab_icon/tv_tab_title");
 
+        View decor = content.getRootView();
         Activity activity = sActivityRef.get();
         if (activity != null) {
             extendUnderNavBar(activity);
         }
+        nav.setClipChildren(false);
+        nav.setClipToPadding(false);
+        bottom.setClipChildren(false);
+        bottom.setClipToPadding(false);
+        bottom.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+        nav.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+        hideEjiangnanNativeVisuals(nav);
+        hideEjiangnanDivider(bottom);
+        hideEjiangnanCommonTabLayer(bottom);
+        content.setTag(EJIANGNAN_CONTENT_TAG, "liquidejnu:content-expanded");
+        enforceEjiangnanContent(content);
 
+        EjiangnanGlassNavigation glassNav = new EjiangnanGlassNavigation(
+                nav.getContext(), nativeRoots);
+        glassNav.setProxy(index -> proxyEjiangnanClick(nativeRoots, index));
+        glassNav.setTag(EJIANGNAN_NAV_TAG, "liquidejnu:ejiangnan-glass-nav");
+        FrameLayout.LayoutParams glassLp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                android.view.Gravity.FILL);
+        // The host is anchored to tl_nav, then raised by exactly 20 physical
+        // pixels. Ancestors are unclipped so the raised glass is not sheared.
+        try {
+            nav.addView(glassNav, glassLp);
+        } catch (Throwable t) {
+            LiquidGlassModule.logErr("ejiangnan glass nav create failed", t);
+            restoreEjiangnanNativeVisuals(nav);
+            restoreEjiangnanCommonTabLayer();
+            return;
+        }
+
+        Context ctx = nav.getContext();
+        float density = ctx.getResources().getDisplayMetrics().density;
+        LiquidGlassHostLayout host = new LiquidGlassHostLayout(ctx, content, nav);
+        host.setupShadow(density, isNight(ctx));
+        host.setClipChildren(false);
+        host.setClipToPadding(false);
+        host.setTranslationY(-20f);
+        try {
+            // Replace the temporary row with the actual glass host while
+            // leaving tl_nav, rl_bottom, roots and listeners untouched.
+            int rowIndex = nav.indexOfChild(glassNav);
+            nav.removeView(glassNav);
+            nav.addView(host, rowIndex, glassLp);
+            host.addView(glassNav, new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT));
+        } catch (Throwable t) {
+            LiquidGlassModule.logErr("ejiangnan glass host attach failed", t);
+            if (host.getParent() instanceof ViewGroup) {
+                ((ViewGroup) host.getParent()).removeView(host);
+            }
+            restoreEjiangnanNativeVisuals(nav);
+            restoreEjiangnanCommonTabLayer();
+            return;
+        }
+
+        sHostRef = new WeakReference<>(host);
+        sTabViewRef = new WeakReference<>(nav);
+        sTabRowRef = new WeakReference<>(glassNav);
+        sPagerRef = new WeakReference<>(content);
+        sEjiangnanNativeRoots = nativeRoots;
+        sEjiangnanGlassNavRef = new WeakReference<>(glassNav);
         sEjiangnanInstalled = true;
         sEjiangnanDecorRef = new WeakReference<>(decor);
-        sEjiangnanNavRef = new WeakReference<>(nav);
+        sEjiangnanNavRef = new WeakReference<>(bottom);
         sEjiangnanContentRef = new WeakReference<>(content);
         installEjiangnanGuards(decor, content);
+        installEjiangnanGlassWatcher(host, glassNav, nativeRoots, content);
+        attachRenderer(ctx, host, content, density);
+        host.attach();
         LiquidGlassModule.log(android.util.Log.INFO,
-                "probe:ejiangnan-nav-hidden nav=" + nav.getClass().getName()
-                        + " content=" + content.getClass().getName()
-                        + " contentSize=" + content.getWidth() + "x"
-                        + content.getHeight());
+                "probe:ejiangnan-glass-nav-created host=" + host.getClass().getName()
+                        + " parent=tl_nav buttons=5 offsetPx=-20");
+        LiquidGlassModule.log(android.util.Log.INFO,
+                "liquid glass installed ejiangnan independent navigation");
+    }
+
+    private static void collectViewsById(View view, int id,
+                                         java.util.ArrayList<View> out) {
+        if (view == null) return;
+        if (view.getId() == id) out.add(view);
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                collectViewsById(group.getChildAt(i), id, out);
+            }
+        }
+    }
+
+    private static void hideEjiangnanNativeVisuals(ViewGroup nav) {
+        int iconId = nav.getResources().getIdentifier("iv_tab_icon", "id",
+                HostApp.EJIANGNAN.pkg);
+        int titleId = nav.getResources().getIdentifier("tv_tab_title", "id",
+                HostApp.EJIANGNAN.pkg);
+        hideById(nav, iconId);
+        hideById(nav, titleId);
+        int rootId = nav.getResources().getIdentifier("root", "id",
+                HostApp.EJIANGNAN.pkg);
+        java.util.ArrayList<View> roots = new java.util.ArrayList<>(5);
+        collectViewsById(nav, rootId, roots);
+        for (View root : roots) {
+            // The host skin can attach an opaque background to root/ll_tap.
+            // Clearing only the icon/title leaves that drawable as a white
+            // strip underneath the glass. Keep the native hierarchy and its
+            // listener intact, but make the whole visual subtree transparent;
+            // proxyEjiangnanClick temporarily restores alpha while dispatching.
+            root.setAlpha(0f);
+            root.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+            if (Build.VERSION.SDK_INT >= 23) root.setForeground(null);
+        }
+    }
+
+    private static void hideById(ViewGroup root, int id) {
+        if (id == 0) return;
+        java.util.ArrayList<View> views = new java.util.ArrayList<>();
+        collectViewsById(root, id, views);
+        for (View view : views) {
+            view.setAlpha(0f);
+            view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        }
+    }
+
+    private static void restoreEjiangnanNativeVisuals(ViewGroup nav) {
+        restoreById(nav, "iv_tab_icon");
+        restoreById(nav, "tv_tab_title");
+        int rootId = nav.getResources().getIdentifier("root", "id",
+                HostApp.EJIANGNAN.pkg);
+        java.util.ArrayList<View> roots = new java.util.ArrayList<>();
+        collectViewsById(nav, rootId, roots);
+        for (View root : roots) root.setAlpha(1f);
+    }
+
+    private static void restoreById(ViewGroup root, String name) {
+        int id = root.getResources().getIdentifier(name, "id", HostApp.EJIANGNAN.pkg);
+        java.util.ArrayList<View> views = new java.util.ArrayList<>();
+        collectViewsById(root, id, views);
+        for (View view : views) {
+            view.setAlpha(1f);
+            view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
+        }
+    }
+
+    private static boolean proxyEjiangnanClick(View[] roots, int index) {
+        if (roots == null || index < 0 || index >= roots.length || roots[index] == null) {
+            return false;
+        }
+        View root = roots[index];
+        boolean enabled = root.isEnabled();
+        boolean clickable = root.isClickable();
+        int visibility = root.getVisibility();
+        try {
+            root.setVisibility(View.VISIBLE);
+            root.setEnabled(true);
+            root.setClickable(true);
+            boolean result = root.performClick();
+            LiquidGlassModule.log(android.util.Log.INFO,
+                    "probe:ejiangnan-page-switch proxy index=" + index
+                            + " result=" + result);
+            return result;
+        } finally {
+            root.setEnabled(enabled);
+            root.setClickable(clickable);
+            root.setVisibility(visibility);
+            root.setAlpha(0f);
+        }
+    }
+
+    private static void installEjiangnanGlassWatcher(LiquidGlassHostLayout host,
+            EjiangnanGlassNavigation glassNav, View[] nativeRoots, ViewGroup content) {
+        sEjiangnanGlassWatcher = () -> {
+            if (host != sHostRef.get() || !host.isAttachedToWindow()) return true;
+            try {
+                ViewGroup nativeNav = sTabViewRef.get() instanceof ViewGroup
+                        ? (ViewGroup) sTabViewRef.get() : null;
+                if (nativeNav != null) {
+                    hideEjiangnanNativeVisuals(nativeNav);
+                }
+                glassNav.syncFromNative();
+                int selected = glassNav.selectedIndex();
+                if (sDrag != null && selected != sLastIndex) {
+                    boolean first = sLastIndex < 0;
+                    sLastIndex = selected;
+                    syncDropletSize(selected);
+                    sDrag.animateToIndex(selected, first);
+                }
+                enforceEjiangnanContent(content);
+                keepNavBarClear();
+            } catch (Throwable t) {
+                LiquidGlassModule.logErr("ejiangnan glass watcher failed", t);
+            }
+            return true;
+        };
+        host.getViewTreeObserver().addOnPreDrawListener(sEjiangnanGlassWatcher);
     }
 
     /** Resolves the known app id without linking against e江南 classes. */
@@ -899,6 +1113,35 @@ final class LiquidGlassInstaller {
                 child.setTag(EJIANGNAN_NAV_TAG, "liquidejnu:divider-hidden");
                 child.setVisibility(View.GONE);
             }
+        }
+    }
+
+    /** Hides the sibling layer used by e江南 for the stock white tab backdrop. */
+    private static void hideEjiangnanCommonTabLayer(ViewGroup parent) {
+        if (parent == null) {
+            return;
+        }
+        int id = parent.getResources().getIdentifier(
+                "common_tab_layout", "id", HostApp.EJIANGNAN.pkg);
+        if (id == 0) {
+            return;
+        }
+        View layer = parent.findViewById(id);
+        if (layer == null || layer == sHostRef.get()) {
+            return;
+        }
+        if (sEjiangnanCommonTabRef.get() != layer) {
+            sEjiangnanCommonTabRef = new WeakReference<>(layer);
+            sEjiangnanCommonTabAlpha = layer.getAlpha();
+        }
+        layer.setAlpha(0f);
+        layer.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+    }
+
+    private static void restoreEjiangnanCommonTabLayer() {
+        View layer = sEjiangnanCommonTabRef.get();
+        if (layer != null) {
+            layer.setAlpha(sEjiangnanCommonTabAlpha);
         }
     }
 
@@ -975,8 +1218,12 @@ final class LiquidGlassInstaller {
         ViewGroup nav = sEjiangnanNavRef.get();
         ViewGroup content = sEjiangnanContentRef.get();
         if (nav != null && nav.getRootView() == decor.getRootView()) {
-            nav.setVisibility(View.GONE);
+            nav.setVisibility(View.VISIBLE);
             hideEjiangnanDivider(nav);
+            ViewParent parent = nav.getParent();
+            if (parent instanceof ViewGroup) {
+                hideEjiangnanCommonTabLayer((ViewGroup) parent);
+            }
         }
         if (content != null && content.getRootView() == decor.getRootView()) {
             enforceEjiangnanContent(content);
@@ -1011,8 +1258,17 @@ final class LiquidGlassInstaller {
             try {
                 ViewGroup nav = sEjiangnanNavRef.get();
                 if (nav != null) {
-                    nav.setVisibility(View.GONE);
+                    nav.setVisibility(View.VISIBLE);
                     hideEjiangnanDivider(nav);
+                    ViewParent parent = nav.getParent();
+                    if (parent instanceof ViewGroup) {
+                        hideEjiangnanCommonTabLayer((ViewGroup) parent);
+                    }
+                }
+                ViewGroup nativeNav = sTabViewRef.get() instanceof ViewGroup
+                        ? (ViewGroup) sTabViewRef.get() : null;
+                if (nativeNav != null) {
+                    hideEjiangnanNativeVisuals(nativeNav);
                 }
                 enforceEjiangnanContent(sEjiangnanContentRef.get());
                 keepNavBarClear();
@@ -2330,6 +2586,9 @@ final class LiquidGlassInstaller {
             // copy is what should be visible inside it — same as KernelSU.
             final DropletPanel droplet = new DropletPanel(
                     ctx, backdrop, sTabRowRef.get(), density, night);
+            if (LiquidGlassModule.app() == HostApp.EJIANGNAN) {
+                droplet.setContentDescription("liquidejnu-droplet-aligned");
+            }
             droplet.setVisibility(View.INVISIBLE);
             host.addView(droplet, new FrameLayout.LayoutParams(0, 0,
                     android.view.Gravity.TOP | android.view.Gravity.START));
@@ -2466,7 +2725,14 @@ final class LiquidGlassInstaller {
                 lp.height = h;
                 droplet.setLayoutParams(lp);
             }
-            sDropletBaseY = tab.getTop() + tabRow.getTop() + inset;
+            int hostPadTop = 0;
+            if (droplet.getParent() instanceof ViewGroup) {
+                hostPadTop = ((ViewGroup) droplet.getParent()).getPaddingTop();
+            }
+            // The droplet's TOP/START layout position already begins after the
+            // host's shadow padding. Remove that padding from the row-relative
+            // coordinate so the highlight shares the custom button baseline.
+            sDropletBaseY = tab.getTop() + tabRow.getTop() + inset - hostPadTop;
             droplet.setTranslationY(sDropletBaseY);
             droplet.setVisibility(View.VISIBLE);
         } catch (Throwable t) {

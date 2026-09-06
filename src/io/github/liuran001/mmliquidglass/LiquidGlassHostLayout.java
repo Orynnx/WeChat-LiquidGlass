@@ -265,6 +265,14 @@ final class LiquidGlassHostLayout extends FrameLayout {
      */
     private static boolean resolveDark(Context context, Boolean textProbe) {
         HostApp app = LiquidGlassModule.app();
+        // e江南 has no dark palette.  Do not let the device/HyperOS uiMode
+        // leak into the independently rendered glass or droplet, even when
+        // the host app has not finished publishing its allow-list entry yet.
+        if (app == HostApp.EJIANGNAN
+                || (context != null
+                && "com.wisedu.cpdaily.jiangnan".equals(context.getPackageName()))) {
+            return false;
+        }
         if (app != null && app.preferTextColorProbe && textProbe != null) {
             return textProbe;
         }

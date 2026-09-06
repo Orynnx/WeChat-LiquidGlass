@@ -9,6 +9,18 @@
 
 使你的 e江南 App 看起来很高级。
 
+## 效果预览
+
+真实设备截图（e江南首页与新闻页）：
+
+| 首页 | 新闻页 |
+| --- | --- |
+| ![e江南液态玻璃首页](docs-home.jpg) | ![e江南液态玻璃新闻页](docs-news.jpg) |
+
+新闻页中的液滴选中与拖拽效果：
+
+![e江南液态玻璃液滴效果](docs-news-droplet.jpg)
+
 ## 功能
 
 - 作用域和运行时 allow-list 都只有 `com.wisedu.cpdaily.jiangnan`。
